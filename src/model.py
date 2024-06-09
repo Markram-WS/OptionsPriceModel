@@ -64,18 +64,18 @@ class RelationalGraphConvLayer(keras.layers.Layer):
 
 def encoder(
     gconv_units, latent_dim, 
-    avgVol_shape, currentP_shape, strikeP_shape, dte_shape, #-- frture --
+    avgVol_shape, current_price_shape, strike_price_shape, dte_shape, #-- frture --
     dense_units, dropout_rate
 ):
-    avgVol = keras.layers.Input(shape=avgVol_shape, name="avg.Volume")
-    currentP = keras.layers.Input(shape=currentP_shape, name="currentPrice")
-    strikeP = keras.layers.Input(shape=strikeP_shape, name="strikePrice")
+    avgVol = keras.layers.Input(shape=avgVol_shape, name="avgVolume")
+    current_price = keras.layers.Input(shape=current_price_shape, name="currentPrice")
+    strike_price = keras.layers.Input(shape=strike_price_shape, name="strikePrice")
     dte = keras.layers.Input(shape=dte_shape, name="DateToExpired")
 
     # Propagate through one or more graph convolutional layers
     for units in gconv_units:
         features_transformed = RelationalGraphConvLayer(units)(
-            [avgVol, currentP, strikeP, dte]
+            [avgVol, current_price, strike_price, dte]
         )
     # Reduce 2-D representation of molecule to 1-D
     x = keras.layers.GlobalAveragePooling1D()(features_transformed)
@@ -88,35 +88,37 @@ def encoder(
     z_mean = keras.layers.Dense(latent_dim, dtype="float32", name="z_mean")(x)
     log_var = keras.layers.Dense(latent_dim, dtype="float32", name="log_var")(x)
 
-    encoder = keras.Model([avgVol, currentP, strikeP, dte], [z_mean, log_var], name="encoder")
+    encoder = keras.Model([avgVol, current_price, strike_price, dte], [z_mean, log_var], name="encoder")
 
     return encoder
 
 
 def decoder(dense_units, dropout_rate, latent_dim, 
-            avgVol_shape, currentP_shape, strikeP_shape, dte_shape, #-- frture --
+            output_shape,#-- frture --
             ):
     latent_inputs = keras.Input(shape=(latent_dim,))
+    
+    decoder_outputs = {
+        "c_bid":None,
+        "c_ask":None,
+        "c_volume":None,
+        "p_bid":None,
+        "p_ask":None,
+        "p_volume":None
+    }
 
     x = latent_inputs
     for units in dense_units:
         x = keras.layers.Dense(units, activation="tanh")(x)
         x = keras.layers.Dropout(dropout_rate)(x)
 
-    # Map outputs of previous layer (x) to [continuous] adjacency tensors (x_adjacency)
-    x_adjacency = keras.layers.Dense(tf.math.reduce_prod(adjacency_shape))(x)
-    x_adjacency = keras.layers.Reshape(adjacency_shape)(x_adjacency)
-    # Symmetrify tensors in the last two dimensions
-    x_adjacency = (x_adjacency + tf.transpose(x_adjacency, (0, 1, 3, 2))) / 2
-    x_adjacency = keras.layers.Softmax(axis=1)(x_adjacency)
-
-    # Map outputs of previous layer (x) to [continuous] feature tensors (x_features)
-    x_features = keras.layers.Dense(tf.math.reduce_prod(feature_shape))(x)
-    x_features = keras.layers.Reshape(feature_shape)(x_features)
-    x_features = keras.layers.Softmax(axis=2)(x_features)
+    for k in decoder_outputs.keys():
+        decoder_outputs[k] = keras.layers.Dense(tf.math.reduce_prod(output_shape))(x)
+        decoder_outputs[k] = keras.layers.Reshape(output_shape)(decoder_outputs[k])
+        decoder_outputs[k] = keras.layers.ReLU(axis=1)(decoder_outputs[k])
 
     decoder = keras.Model(
-        latent_inputs, outputs=[x_adjacency, x_features], name="decoder"
+        latent_inputs, outputs=[*decoder_outputs.values()], name="decoder"
     )
 
     return decoder
