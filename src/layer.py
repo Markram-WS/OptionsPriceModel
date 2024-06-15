@@ -47,32 +47,26 @@ class RelationalGraphConvLayer(keras.layers.Layer):
 
         self.built = True
 
-    def call(self, inputs):
-        adjacency, features = inputs
-        # Aggregate information from neighbors
-        x = tf.matmul(adjacency, features[:, None, :, :])
+    def call(self, features):
         # Apply linear transformation
-        x = tf.matmul(x, self.kernel)
+        x = tf.matmul(features, self.kernel)
         if self.use_bias:
             x += self.bias
-        # Reduce bond types dim
-        x_reduced = tf.reduce_sum(x, axis=1)
         # Apply non-linear transformation
-        return self.activation(x_reduced)
+        return self.activation(x)
 
 
 def encoder(
     gconv_units, latent_dim, 
-    input_dim, dte_shape, #-- frture --
+    input_dim,  #-- frture --
     dense_units, dropout_rate
 ):    
-    adjacency_input = keras.layers.Input(shape=(input_dim, input_dim), name='adjacency')
     features_input = keras.layers.Input(shape=(input_dim, 4), name='features') 
 
     # Propagate through one or more graph convolutional layers
     for units in gconv_units:
         features_transformed = RelationalGraphConvLayer(units)(
-            [adjacency_input,features_input]
+            [features_input]
         )
     # Reduce 2-D representation of molecule to 1-D
     x = keras.layers.GlobalAveragePooling1D()(features_transformed)
@@ -85,7 +79,7 @@ def encoder(
     z_mean = keras.layers.Dense(latent_dim, dtype="float32", name="z_mean")(x)
     log_var = keras.layers.Dense(latent_dim, dtype="float32", name="log_var")(x)
 
-    encoder = keras.Model([adjacency_input,features_input], [z_mean, log_var], name="encoder")
+    encoder = keras.Model([features_input], [z_mean, log_var], name="encoder")
 
     return encoder
 
