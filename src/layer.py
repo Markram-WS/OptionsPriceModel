@@ -57,15 +57,19 @@ class RelationalGraphConvLayer(keras.layers.Layer):
 
 
 def encoder(
-    gconv_units, latent_dim, 
-    input_dim,  #-- frture --
-    dense_units, dropout_rate
+    latent_dim, 
+    input_shape, 
+    gconv_units, 
+    dense_units, 
+    dropout_rate,
+    use_bias = False
+    
 ):    
-    features_input = keras.layers.Input(shape=(input_dim, 4), name='features') 
+    features_input = keras.layers.Input(shape=(input_shape), name='features') 
 
     # Propagate through one or more graph convolutional layers
     for units in gconv_units:
-        features_transformed = RelationalGraphConvLayer(units)(
+        features_transformed = RelationalGraphConvLayer(units,output_dim=latent_dim,use_bias=use_bias)(
             [features_input]
         )
     # Reduce 2-D representation of molecule to 1-D

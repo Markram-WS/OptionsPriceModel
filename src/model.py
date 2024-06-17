@@ -5,11 +5,10 @@ import numpy as np
 #https://keras.io/examples/generative/molecule_generation/
 
 class OptionChainGenerator(keras.Model):
-    def __init__(self, encoder, decoder, max_len, **kwargs):
+    def __init__(self, encoder, decoder, **kwargs):
         super().__init__(**kwargs)
         self.encoder = encoder
         self.decoder = decoder
-        self.max_len = max_len
         self.total_loss_tracker = keras.metrics.Mean(name="total_loss")
         self.kl_loss_tracker = keras.metrics.Mean(name="kl_loss")
         self.optVal_loss_tracker = keras.metrics.Mean(name="optVal_loss")
