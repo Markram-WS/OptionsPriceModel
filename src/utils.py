@@ -1,3 +1,7 @@
 def debug(x):
     print("===== [DEBUG] =====")
-    print(x)
+    if type(x) == list:
+        for i in x:
+            print(i)
+    else:
+        print(x)

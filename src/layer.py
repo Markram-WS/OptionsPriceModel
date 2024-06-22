@@ -1,6 +1,6 @@
 from tensorflow import keras
 import tensorflow as tf
-
+from   src.utils import debug
 class RelationalGraphConvLayer(keras.layers.Layer):
     def __init__(
         self,
@@ -24,8 +24,7 @@ class RelationalGraphConvLayer(keras.layers.Layer):
         self.bias_regularizer = keras.regularizers.get(bias_regularizer)
 
     def build(self, input_shape):
-        feature_dim  = input_shape[1][-1]
-
+        feature_dim  = input_shape[0][-1]
         self.kernel = self.add_weight(
             shape=(feature_dim, self.units),
             initializer=self.kernel_initializer,
@@ -49,6 +48,8 @@ class RelationalGraphConvLayer(keras.layers.Layer):
 
     def call(self, features):
         # Apply linear transformation
+        print(features)
+        print(self.kernel)
         x = tf.matmul(features, self.kernel)
         if self.use_bias:
             x += self.bias
@@ -62,14 +63,14 @@ def encoder(
     gconv_units, 
     dense_units, 
     dropout_rate,
-    use_bias = False
-    
+    use_bias = False,
+    batch_size=32
 ):    
-    features_input = keras.layers.Input(shape=(input_shape), name='features') 
+    features_input = keras.layers.Input(shape=input_shape, batch_size=batch_size, name='features')
 
     # Propagate through one or more graph convolutional layers
     for units in gconv_units:
-        features_transformed = RelationalGraphConvLayer(units,output_dim=latent_dim,use_bias=use_bias)(
+        features_transformed = RelationalGraphConvLayer(output_dim=units,use_bias=use_bias)(
             [features_input]
         )
     # Reduce 2-D representation of molecule to 1-D

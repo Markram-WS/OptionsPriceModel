@@ -1,6 +1,6 @@
 from tensorflow import keras
 import tensorflow as tf
-from src.utils import *
+from   src.utils import debug
 import numpy as np
 #https://keras.io/examples/generative/molecule_generation/
 
