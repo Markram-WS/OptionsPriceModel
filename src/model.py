@@ -12,10 +12,10 @@ class OptionChainGenerator(keras.Model):
         self.total_loss_tracker = keras.metrics.Mean(name="total_loss")
         self.kl_loss_tracker = keras.metrics.Mean(name="kl_loss")
         self.optVal_loss_tracker = keras.metrics.Mean(name="optVal_loss")
-        self.c_vol_loss_tracker = keras.metrics.Mean(name="c_vol_loss")
-        self.p_vol_loss_tracker = keras.metrics.Mean(name="p_vol_loss")
+        self.vol_loss_tracker = keras.metrics.Mean(name="vol_loss")
         
-    def train_step(self, X_input, Y_real):
+    def train_step(self, data):
+        X_input, Y_real = data  
 
         with tf.GradientTape() as tape:
             #__call__ objects
@@ -23,23 +23,23 @@ class OptionChainGenerator(keras.Model):
                 X_input, training=True
             )
             generated_data = [c_bid, c_ask, c_volume, p_bid, p_ask, p_volume]
-            total_loss,kl_loss  ,optVal_loss,p_volume_loss, c_volume_loss= self._compute_loss(
-                z_mean, z_log_var, Y_real[0], generated_data
+            total_loss,kl_loss  ,optVal_loss, volume_loss= self._compute_loss(
+                z_mean, z_log_var, Y_real, generated_data
             )
-            
+
         grads = tape.gradient(total_loss, self.trainable_weights)
         self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
 
         self.total_loss_tracker.update_state(total_loss)
         self.kl_loss_tracker.update_state(kl_loss)
         self.optVal_loss_tracker.update_state(optVal_loss)
-        self.c_vol_loss_tracker.update_state(c_volume_loss)
-        self.p_vol_loss_tracker.update_state(p_volume_loss)
+        self.vol_loss_tracker.update_state(volume_loss)
+
+    
         return {"total_loss": self.total_loss_tracker.result(),
                 "kl_loss": self.kl_loss_tracker.result(),
-                "optVal": self.optVal_loss_tracker.result(),
-                "c_vol": self.c_vol_loss_tracker.result(),
-                "p_vol": self.p_vol_loss_tracker.result()
+                "optVal_loss": self.optVal_loss_tracker.result(),
+                "vol_loss": self.vol_loss_tracker.result()
                 }
 
         
@@ -47,37 +47,34 @@ class OptionChainGenerator(keras.Model):
         features_real = Y_real
         # Reconstruction loss for each output
         reconstruction_losses = []
-        reconstruction_p_volume_losss = []
-        reconstruction_c_volume_losss = []
+        reconstruction_volume_losss = []
         reconstruction_values_losss = []
-        debug(features_real)
-        for input_name, decoder_output in zip(["c_bid", "c_ask", "c_volume", "p_bid", "p_ask", "p_volume"], generated_data[0]):
+        colList = ["c_bid", "c_ask", "c_volume", "p_bid", "p_ask", "p_volume"]
+        for input_name, decoder_output in zip(colList, generated_data):
             
             if input_name == "p_volume":
                 # Compute reconstruction loss for p_volume
                 #! features_input index of p_volume
-                reconstruction_loss_p_volume = tf.reduce_mean(tf.square(tf.reduce_sum(decoder_output, axis=1, keepdims=True)  - tf.reduce_sum(features_real[:, :, 0], axis=1, keepdims=True)))
-                reconstruction_p_volume_losss.append(reconstruction_loss_p_volume)
+                reconstruction_loss_p_volume = tf.reduce_mean(tf.square(tf.reduce_sum(decoder_output, axis=1, keepdims=True)  - tf.reduce_sum(features_real[:, :, -1], axis=1, keepdims=True)))
+                reconstruction_volume_losss.append(reconstruction_loss_p_volume)
                 reconstruction_losses.append(reconstruction_loss_p_volume)
                 
             elif input_name == "c_volume":
                 # Compute reconstruction loss for c_volume
                 #! features_input index of c_volume
-                reconstruction_loss_c_volume = tf.reduce_mean(tf.square(tf.reduce_sum(decoder_output, axis=1, keepdims=True)  - tf.reduce_sum(features_real[:, :, 0], axis=1, keepdims=True)))
-                reconstruction_c_volume_losss.append(reconstruction_loss_c_volume)
+                reconstruction_loss_c_volume = tf.reduce_mean(tf.square(tf.reduce_sum(decoder_output, axis=1, keepdims=True)  - tf.reduce_sum(features_real[:, :, -4], axis=1, keepdims=True)))
+                reconstruction_volume_losss.append(reconstruction_loss_c_volume)
                 reconstruction_losses.append(reconstruction_loss_c_volume)
                 
             else:
                 # Compute reconstruction loss for other features
-                reconstruction_loss = tf.reduce_mean(tf.square(decoder_output - features_real[:, :, 0]))
-                reconstruction_values_losss(reconstruction_loss)
+                reconstruction_loss = tf.reduce_mean(tf.square(tf.reduce_sum(decoder_output, axis=1, keepdims=True)  - tf.reduce_sum(features_real[:, :, colList.index(input_name)], axis=1, keepdims=True)))
+                reconstruction_values_losss.append(reconstruction_loss)
                 reconstruction_losses.append(reconstruction_loss)
-                
 
         # Reconstruction loss: sum of all reconstruction losses
         reconstruction_loss_total = tf.reduce_sum(reconstruction_losses)
-        reconstruction_p_volume_loss_total = tf.reduce_sum(reconstruction_p_volume_losss)
-        reconstruction_c_volume_loss_total = tf.reduce_sum(reconstruction_c_volume_losss)
+        reconstruction_volume_loss_total = tf.reduce_sum(reconstruction_volume_losss)
         reconstruction_values_losss = tf.reduce_sum(reconstruction_values_losss)
         # KL divergence loss
         kl_loss = -0.5 * tf.reduce_sum(1 + log_var - tf.square(z_mean) - tf.exp(log_var), axis=-1)
@@ -85,7 +82,7 @@ class OptionChainGenerator(keras.Model):
         # Total loss
         total_loss = tf.reduce_mean(reconstruction_loss_total + kl_loss)
 
-        return total_loss,kl_loss,reconstruction_values_losss,reconstruction_p_volume_loss_total,reconstruction_c_volume_loss_total
+        return total_loss,kl_loss,reconstruction_values_losss,reconstruction_volume_loss_total
 
     def call(self, inputs, training=False):
         z_mean, log_var = self.encoder(inputs)
