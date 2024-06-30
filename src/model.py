@@ -2,6 +2,7 @@ from tensorflow import keras
 import tensorflow as tf
 from   src.utils import debug
 import numpy as np
+import wandb
 #https://keras.io/examples/generative/molecule_generation/
 
 class OptionChainGenerator(keras.Model):
@@ -35,7 +36,6 @@ class OptionChainGenerator(keras.Model):
         self.optVal_loss_tracker.update_state(optVal_loss)
         self.vol_loss_tracker.update_state(volume_loss)
 
-    
         return {"total_loss": self.total_loss_tracker.result(),
                 "kl_loss": self.kl_loss_tracker.result(),
                 "optVal_loss": self.optVal_loss_tracker.result(),

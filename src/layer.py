@@ -7,7 +7,7 @@ def encoder(
     latent_dim, 
     input_shape, 
     dense_units, 
-    dropout_rate,
+    dropout_rate=0.1,
     use_bias = False,
     batch_size=32
 ):    
@@ -28,7 +28,7 @@ def encoder(
 
     return encoder
 
-def decoder(latent_dim, output_shape, dense_units, dropout_rate):
+def decoder(latent_dim, output_shape, dense_units, dropout_rate=0.1):
     latent_inputs = keras.Input(shape=(latent_dim,))
     
     decoder_outputs = {
@@ -46,9 +46,9 @@ def decoder(latent_dim, output_shape, dense_units, dropout_rate):
         x = keras.layers.Dropout(dropout_rate)(x)
 
     for k in decoder_outputs.keys():
-        decoder_outputs[k] = keras.layers.Dense(output_shape[0] * output_shape[1])(x)
-        decoder_outputs[k] = keras.layers.Reshape(output_shape)(decoder_outputs[k])
-        decoder_outputs[k] = keras.layers.ReLU()(decoder_outputs[k])
+        decoder_outputs[k] = keras.layers.Dense(output_shape[0] * output_shape[1], name=f"Dense_{k}")(x)
+        decoder_outputs[k] = keras.layers.Reshape(output_shape, name=f"Reshape_{k}")(decoder_outputs[k])
+        decoder_outputs[k] = keras.layers.ReLU(name=f"ReLU_{k}")(decoder_outputs[k])
 
     decoder = keras.Model(
         latent_inputs, outputs=list(decoder_outputs.values()), name="decoder"
