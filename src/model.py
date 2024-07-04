@@ -16,10 +16,12 @@ class OptionChainGenerator(keras.Model):
         self.optimizer = optimizer
         self.total_loss_tracker = tf.keras.metrics.Mean(name="total_loss")
         self.kl_loss_tracker = tf.keras.metrics.Mean(name="kl_loss")
-        self.vol_loss_tracker = tf.keras.metrics.Mean(name="vol_loss")
+        
         self.val_total_loss_tracker = tf.keras.metrics.Mean(name="total_loss")
         self.val_kl_loss_tracker = tf.keras.metrics.Mean(name="kl_loss")
-        self.val_vol_loss_tracker = tf.keras.metrics.Mean(name="vol_loss")
+        
+        #self.vol_loss_tracker = tf.keras.metrics.Mean(name="vol_loss")
+        #self.val_vol_loss_tracker = tf.keras.metrics.Mean(name="vol_loss")
         
         
     @property
@@ -27,10 +29,8 @@ class OptionChainGenerator(keras.Model):
         return [
             self.total_loss_tracker,
             self.kl_loss_tracker,
-            self.vol_loss_tracker,
             self.val_total_loss_tracker,
             self.val_kl_loss_tracker,
-            self.val_vol_loss_tracker,
         ]
         
     def train_step(self, data):
@@ -42,20 +42,21 @@ class OptionChainGenerator(keras.Model):
                 X_input, training=True
             )
             generated_data = [c_bid, c_ask, c_volume, p_bid, p_ask, p_volume]
-            total_loss,kl_loss  ,volume_loss= self._compute_loss(
+            total_loss,kl_loss  ,_= self._compute_loss(
                 z_mean, z_log_var, Y_real, generated_data
             )            
 
         grads = tape.gradient(total_loss, self.trainable_weights)
+        grads = [tf.clip_by_value(grad, -1.0, 1.0) for grad in grads if grad is not None]
         self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
 
         self.kl_loss_tracker.update_state(kl_loss)
         self.total_loss_tracker.update_state(total_loss)
-        self.vol_loss_tracker.update_state(volume_loss)
+        #self.vol_loss_tracker.update_state(volume_loss)
 
         return {"total_loss": self.total_loss_tracker.result(),
                 "kl_loss": self.kl_loss_tracker.result(),
-                "vol_loss":self.vol_loss_tracker.result()
+               # "vol_loss":self.vol_loss_tracker.result()
                 }
 
     def test_step(self, data):
@@ -67,51 +68,60 @@ class OptionChainGenerator(keras.Model):
 
         self.val_kl_loss_tracker.update_state(kl_loss)
         self.val_total_loss_tracker.update_state(total_loss)
-        self.val_vol_loss_tracker.update_state(volume_loss)
+        #self.val_vol_loss_tracker.update_state(volume_loss)
 
         return {"total_loss": self.val_total_loss_tracker.result(),
                 "kl_loss": self.val_kl_loss_tracker.result(),
-                "vol_loss":self.val_vol_loss_tracker.result()
+                #"vol_loss":self.val_vol_loss_tracker.result()
                 }
         
     def _compute_loss(self,z_mean, log_var, Y_real, generated_data):
-        features_real = Y_real
         # Reconstruction loss for each output
         reconstruction_losses = []
         reconstruction_volume_losss = []
         reconstruction_values_losss = []
         colList = ["c_bid", "c_ask", "c_volume", "p_bid", "p_ask", "p_volume"]
-        for input_name, decoder_output in zip(colList, generated_data):
-            reconstruction_loss  = tf.reduce_mean(tf.square(tf.reduce_sum(decoder_output, axis=1, keepdims=True)  - tf.reduce_sum(features_real[:, :, colList.index(input_name)], axis=1, keepdims=True)))
-            if input_name == "p_volume":
+        
+        for  col,genData in zip(colList,generated_data):
+            #reconstruction_loss  = tf.reduce_mean(tf.square(tf.reduce_sum(decoder_output, axis=1, keepdims=True)  - tf.reduce_sum(features_real[:, :, colList.index(input_name)], axis=1, keepdims=True)))
+       
+            # Calculate the loss for the other features normally
+            reconstruction_loss = tf.reduce_mean( tf.square(genData - tf.expand_dims(Y_real[:, :, colList.index(col)], axis=-1) ) )
+            
+            if col == "p_volume":
                 # Compute reconstruction loss for p_volume
                 #! features_input index of p_volume
                 reconstruction_loss_p_volume = reconstruction_loss
                 reconstruction_volume_losss.append(reconstruction_loss)
 
                 
-            elif input_name == "c_volume":
+            elif col == "c_volume":
                 # Compute reconstruction loss for c_volume
                 #! features_input index of c_volume
                 reconstruction_loss_c_volume = reconstruction_loss
                 reconstruction_volume_losss.append(reconstruction_loss)
-               
+            
                 
             else:
 
                 reconstruction_losses.append(reconstruction_loss)
-
+            tf.debugging.check_numerics(genData - tf.expand_dims(Y_real[:, :, colList.index(col)], axis=-1), message=f'{col} contains NaNs or Infs ----- {Y_real[:, :, colList.index(col)]}')
         # Reconstruction loss: sum of all reconstruction losses
         reconstruction_loss_total = tf.reduce_sum(reconstruction_losses)
+        tf.debugging.check_numerics(reconstruction_loss_total, message=f'reconstruction_loss_total contains NaNs or Infs')
         reconstruction_volume_total = tf.reduce_sum(reconstruction_volume_losss)
 
         
         # KL divergence loss
+        log_var = tf.clip_by_value(log_var, -1.0, 1.0)
         kl_loss = -0.5 * tf.reduce_sum(1 + log_var - tf.square(z_mean) - tf.exp(log_var), axis=-1)
         
         # Total loss
         total_loss = tf.reduce_mean(reconstruction_loss_total + kl_loss)
         volume_loss = tf.reduce_mean(reconstruction_volume_total)
+        
+
+  
         return total_loss,kl_loss,volume_loss
 
     def call(self, inputs, training=False):
