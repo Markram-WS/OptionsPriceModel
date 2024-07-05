@@ -16,12 +16,13 @@ class OptionChainGenerator(keras.Model):
         self.optimizer = optimizer
         self.total_loss_tracker = tf.keras.metrics.Mean(name="total_loss")
         self.kl_loss_tracker = tf.keras.metrics.Mean(name="kl_loss")
+        self.vol_loss_tracker = tf.keras.metrics.Mean(name="vol_loss")
         
         self.val_total_loss_tracker = tf.keras.metrics.Mean(name="total_loss")
         self.val_kl_loss_tracker = tf.keras.metrics.Mean(name="kl_loss")
+        self.val_vol_loss_tracker = tf.keras.metrics.Mean(name="vol_loss")
         
-        #self.vol_loss_tracker = tf.keras.metrics.Mean(name="vol_loss")
-        #self.val_vol_loss_tracker = tf.keras.metrics.Mean(name="vol_loss")
+        
         
         
     @property
@@ -29,8 +30,10 @@ class OptionChainGenerator(keras.Model):
         return [
             self.total_loss_tracker,
             self.kl_loss_tracker,
+            self.vol_loss_tracker,
             self.val_total_loss_tracker,
             self.val_kl_loss_tracker,
+            self.val_vol_loss_tracker
         ]
         
     def train_step(self, data):
@@ -42,7 +45,7 @@ class OptionChainGenerator(keras.Model):
                 X_input, training=True
             )
             generated_data = [c_bid, c_ask, c_volume, p_bid, p_ask, p_volume]
-            total_loss,kl_loss  ,_= self._compute_loss(
+            total_loss,kl_loss  ,volume_loss= self._compute_loss(
                 z_mean, z_log_var, Y_real, generated_data
             )            
 
@@ -52,11 +55,11 @@ class OptionChainGenerator(keras.Model):
 
         self.kl_loss_tracker.update_state(kl_loss)
         self.total_loss_tracker.update_state(total_loss)
-        #self.vol_loss_tracker.update_state(volume_loss)
+        self.vol_loss_tracker.update_state(volume_loss)
 
         return {"total_loss": self.total_loss_tracker.result(),
                 "kl_loss": self.kl_loss_tracker.result(),
-               # "vol_loss":self.vol_loss_tracker.result()
+                "vol_loss":self.vol_loss_tracker.result()
                 }
 
     def test_step(self, data):
@@ -68,11 +71,11 @@ class OptionChainGenerator(keras.Model):
 
         self.val_kl_loss_tracker.update_state(kl_loss)
         self.val_total_loss_tracker.update_state(total_loss)
-        #self.val_vol_loss_tracker.update_state(volume_loss)
+        self.val_vol_loss_tracker.update_state(volume_loss) 
 
         return {"total_loss": self.val_total_loss_tracker.result(),
                 "kl_loss": self.val_kl_loss_tracker.result(),
-                #"vol_loss":self.val_vol_loss_tracker.result()
+                "vol_loss":self.val_vol_loss_tracker.result()
                 }
         
     def _compute_loss(self,z_mean, log_var, Y_real, generated_data):
@@ -109,7 +112,7 @@ class OptionChainGenerator(keras.Model):
         # Reconstruction loss: sum of all reconstruction losses
         reconstruction_loss_total = tf.reduce_sum(reconstruction_losses)
         tf.debugging.check_numerics(reconstruction_loss_total, message=f'reconstruction_loss_total contains NaNs or Infs')
-        reconstruction_volume_total = tf.reduce_sum(reconstruction_volume_losss)
+        reconstruction_volume_total = tf.reduce_sum(reconstruction_volume_losss) *0.3 #minimize the importance
 
         
         # KL divergence loss
@@ -118,7 +121,7 @@ class OptionChainGenerator(keras.Model):
         
         # Total loss
         total_loss = tf.reduce_mean(reconstruction_loss_total + kl_loss)
-        volume_loss = tf.reduce_mean(reconstruction_volume_total)
+        volume_loss = tf.reduce_mean(reconstruction_volume_total + kl_loss)
         
 
   
