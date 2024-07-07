@@ -9,26 +9,49 @@ def encoder(
     dense_units, 
     dropout_rate=0.1,
     use_bias = False,
+    initializer = keras.initializers.GlorotUniform(),
     batch_size=32
 ):    
     features_input = keras.layers.Input(shape=input_shape,batch_size=batch_size , name='features') 
-    
+
     # Reduce 2-D representation of molecule to 1-D
     x = keras.layers.GlobalAveragePooling1D()(features_input)
 
     # Propagate through one or more densely connected layers
     for units in dense_units:
-        x = keras.layers.Dense(units, activation="relu")(x)
+        x = keras.layers.Dense( units, 
+                                activation="relu",
+                                kernel_initializer=initializer,
+                                use_bias=use_bias
+                                )(x)
+        print(f"After Dense layer with {units} units:", x)
         x = keras.layers.Dropout(dropout_rate)(x)
+        print("After Dropout:", x)
 
-    z_mean = keras.layers.Dense(latent_dim, dtype="float32", name="z_mean")(x)
-    log_var = keras.layers.Dense(latent_dim, dtype="float32", name="log_var")(x)
+    z_mean = keras.layers.Dense(
+            latent_dim, 
+            kernel_initializer=initializer,
+            use_bias=use_bias,
+            dtype="float32", 
+            name="z_mean")(x)
+    log_var = keras.layers.Dense(
+            latent_dim, 
+            kernel_initializer=initializer,
+            use_bias=use_bias,
+            dtype="float32", 
+            name="log_var")(x)
 
     encoder = keras.Model([features_input], [z_mean, log_var], name="encoder")
 
     return encoder
 
-def decoder(latent_dim, output_shape, dense_units, dropout_rate=0.1):
+def decoder(latent_dim, 
+            output_shape, 
+            dense_units, 
+            dropout_rate=0.1 ,   
+            use_bias = False,
+            initializer = keras.initializers.GlorotUniform()):
+    
     latent_inputs = keras.Input(shape=(latent_dim,))
     
     decoder_outputs = {
@@ -42,7 +65,12 @@ def decoder(latent_dim, output_shape, dense_units, dropout_rate=0.1):
 
     x = latent_inputs
     for units in dense_units:
-        x = keras.layers.Dense(units, activation="relu")(x)
+        x = keras.layers.Dense(units, 
+                activation="relu",
+                kernel_initializer=initializer,
+                use_bias=use_bias,
+                dtype="float32"
+                )(x)
         x = keras.layers.Dropout(dropout_rate)(x)
 
     for k in decoder_outputs.keys():
