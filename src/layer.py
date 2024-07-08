@@ -24,9 +24,7 @@ def encoder(
                                 kernel_initializer=initializer,
                                 use_bias=use_bias
                                 )(x)
-        print(f"After Dense layer with {units} units:", x)
         x = keras.layers.Dropout(dropout_rate)(x)
-        print("After Dropout:", x)
 
     z_mean = keras.layers.Dense(
             latent_dim, 

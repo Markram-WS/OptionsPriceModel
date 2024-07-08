@@ -130,8 +130,8 @@ class OptionChainGenerator(keras.Model):
         kl_loss = -0.5 * tf.reduce_sum(1 + log_var - tf.square(z_mean) - tf.exp(log_var), axis=-1)
         
         # Total loss
-        total_loss = tf.reduce_mean(reconstruction_values_total + reconstruction_volume_total*0.1 + kl_loss)
-        volume_loss = tf.reduce_mean(reconstruction_volume_total*0.3 + kl_loss)
+        total_loss = tf.reduce_mean(reconstruction_values_total + reconstruction_volume_total*0.2 + kl_loss)
+        volume_loss = tf.reduce_mean(reconstruction_volume_total*0.4 + kl_loss)
         values_loss = tf.reduce_mean(reconstruction_values_total + kl_loss)
         
 
