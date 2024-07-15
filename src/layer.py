@@ -19,12 +19,18 @@ def encoder(
 
     # Propagate through one or more densely connected layers
     for units in dense_units:
-        x = keras.layers.Dense( units, 
-                                activation="relu",
-                                kernel_initializer=initializer,
-                                use_bias=use_bias
-                                )(x)
-        x = keras.layers.Dropout(dropout_rate)(x)
+        #<NN>
+        # x = keras.layers.Dense( units, 
+        #                         activation="relu",
+        #                         kernel_initializer=initializer,
+        #                         use_bias=use_bias
+        #                         )(x)
+        # x = keras.layers.Dropout(dropout_rate)(x)
+        
+        #<CNN>
+        x = keras.layers.Conv2D(units, (3, 3), activation='relu',kernel_initializer=initializer,use_bias=use_bias)(x)
+        x = keras.layers.MaxPooling2D((2, 2), padding='same')(x)
+    x = keras.layers.Flatten()(x)
 
     z_mean = keras.layers.Dense(
             latent_dim, 
@@ -52,25 +58,42 @@ def decoder(latent_dim,
     
     latent_inputs = keras.Input(shape=(latent_dim,))
     
+    # decoder_outputs = {
+    #     "c_bid": None,
+    #     "c_ask": None,
+    #     "c_volume": None,
+    #     "p_bid": None,
+    #     "p_ask": None,
+    #     "p_volume": None
+    # }
     decoder_outputs = {
-        "c_bid": None,
-        "c_ask": None,
-        "c_volume": None,
-        "p_bid": None,
-        "p_ask": None,
-        "p_volume": None
+        "features": None
     }
-
     x = latent_inputs
-    for units in dense_units:
-        x = keras.layers.Dense(units, 
-                activation="relu",
-                kernel_initializer=initializer,
-                use_bias=use_bias,
-                dtype="float32"
-                )(x)
-        x = keras.layers.Dropout(dropout_rate)(x)
+    # สร้าง dense layer ตาม latent_dim
+    x = keras.layers.Dense(6 * latent_dim, activation='relu')(x)
 
+    # แปลง vector เป็นรูปแบบ 3D tensor
+    x = keras.layers.Reshape((6, 32, 1))(x)
+
+    for units in dense_units:
+        ##<NN>
+        # x = keras.layers.Dense(units, 
+        #         activation="relu",
+        #         kernel_initializer=initializer,
+        #         use_bias=use_bias,
+        #         dtype="float32"
+        #         )(x)
+        # x = keras.layers.Dropout(dropout_rate)(x)
+        
+        ##<CNN>
+        # สร้าง CNN layers
+        x = keras.layers.Conv2DTranspose(units, (3, 3), activation='relu', padding='same')(x)
+        x = keras.layers.UpSampling2D((2, 2))(x)
+
+    # สร้าง output layer โดยกำหนดให้มี shape (None, 6, 32)
+    x = keras.layers.Conv2D(1, (3, 3), activation='sigmoid', padding='same')(x)
+        
     for k in decoder_outputs.keys():
         decoder_outputs[k] = keras.layers.Dense(output_shape[0] * output_shape[1], name=f"Dense_{k}")(x)
         decoder_outputs[k] = keras.layers.Reshape(output_shape, name=f"Reshape_{k}")(decoder_outputs[k])
