@@ -95,6 +95,10 @@ class OptionChainGenerator(keras.Model):
         total_loss = reconstruction_loss  + kl_loss
         return kl_loss,total_loss
 
+    def vae_loss(self,y_true, y_pred):
+        kl_loss, total_loss = self._compute_loss(y_true, y_pred, self.encoder.get_layer('z_mean').output, self.encoder.get_layer('z_log_var').output)
+        return total_loss
+
     def call(self, inputs, training=False):
         z_mean, log_var = self.encoder(inputs)
         z = Sampling()([z_mean, log_var])
