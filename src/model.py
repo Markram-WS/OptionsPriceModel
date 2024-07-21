@@ -90,7 +90,8 @@ class OptionChainGenerator(keras.Model):
         # Calculate the loss for the features
         reconstruction_loss = mse(y_real, generated_data)
         # KL divergence loss
-        kl_loss = -0.5 * tf.reduce_sum(1 + log_var - tf.square(z_mean) - tf.exp(log_var), axis=-1)
+        kl_loss = -0.5 * tf.reduce_mean(tf.reduce_sum(1 + log_var - tf.square(z_mean) - tf.exp(log_var), axis=-1))
+
         # # Total loss
         total_loss = reconstruction_loss  + kl_loss
         return kl_loss,total_loss

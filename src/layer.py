@@ -19,7 +19,7 @@ def encoder(
     for units in dense_units:
         #<NN>
         x = keras.layers.Dense( units, 
-                                activation="relu",
+                                activation="linear",
                                 kernel_initializer=initializer,
                                 use_bias=use_bias
                                 )(x)
