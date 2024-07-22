@@ -20,7 +20,7 @@ def encoder(
     for units in dense_units:
         #<NN>
         x = keras.layers.Dense( units, 
-                                activation="linear",
+                                activation="relu",
                                 kernel_initializer=initializer,
                                 use_bias=use_bias
                                 )(x)
@@ -34,14 +34,14 @@ def encoder(
             latent_dim, 
             kernel_initializer=initializer,
             use_bias=use_bias,
-            activation='linear',
+            activation='relu',
             dtype="float32", 
             name="z_mean")(x)
     log_var = keras.layers.Dense(
             latent_dim, 
             kernel_initializer=initializer,
             use_bias=use_bias,
-            activation='linear',
+            activation='relu',
             dtype="float32", 
             name="log_var")(x)
 

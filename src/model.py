@@ -24,9 +24,6 @@ class OptionChainGenerator(keras.Model):
         # self.val_values_loss_tracker = tf.keras.metrics.Mean(name="values_loss")
         # self.val_volume_loss_tracker = tf.keras.metrics.Mean(name="volume_loss")
         
-        
-        
-        
     @property
     def metrics(self):
         return [
@@ -53,7 +50,7 @@ class OptionChainGenerator(keras.Model):
             )            
 
         grads = tape.gradient(total_loss, self.trainable_weights)
-        #grads = [tf.clip_by_value(grad, -1.0, 1.0) for grad in grads if grad is not None]
+        grads = [tf.clip_by_value(grad, -1, 1) for grad in grads if grad is not None]
         self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
 
         self.kl_loss_tracker.update_state(kl_loss)
@@ -66,6 +63,8 @@ class OptionChainGenerator(keras.Model):
                 # "values_loss":self.val_loss_tracker.result(),
                 # "volume_loss":self.vol_loss_tracker.result()
                 }
+        
+        
 
     def test_step(self, data):
         X_input, Y_real = data  
@@ -90,15 +89,16 @@ class OptionChainGenerator(keras.Model):
         # Calculate the loss for the features
         reconstruction_loss = mse(y_real, generated_data)
         # KL divergence loss
-        kl_loss = -0.5 * tf.reduce_mean(tf.reduce_sum(1 + log_var - tf.square(z_mean) - tf.exp(log_var), axis=-1))
+        log_var_clipped = tf.clip_by_value(log_var, -10, 10)
+        kl_loss = -0.5 * tf.reduce_mean(tf.reduce_sum(1 + log_var_clipped - tf.square(z_mean) - tf.exp(log_var_clipped), axis=-1))
 
         # # Total loss
         total_loss = reconstruction_loss  + kl_loss
         return kl_loss,total_loss
 
-    def vae_loss(self,y_true, y_pred):
-        kl_loss, total_loss = self._compute_loss(y_true, y_pred, self.encoder.get_layer('z_mean').output, self.encoder.get_layer('z_log_var').output)
-        return total_loss
+    # def vae_loss(self,y_true, y_pred):
+    #     kl_loss, total_loss = self._compute_loss(y_true, y_pred, self.encoder.get_layer('z_mean').output, self.encoder.get_layer('z_log_var').output)
+    #     return total_loss
 
     def call(self, inputs, training=False):
         z_mean, log_var = self.encoder(inputs)
