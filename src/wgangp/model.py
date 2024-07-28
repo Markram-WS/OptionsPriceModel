@@ -9,7 +9,6 @@ class OptionChainGenerator(keras.Model):
         self.discriminator = discriminator
         self.generator = generator
 
-        self.latent_dim = kwargs.get("latent_dim", 128)
         self.d_steps = kwargs.get("discriminator_extra_steps", (3,))
         self.gp_weight = kwargs.get("gp_weight", (10.0,))
 
@@ -59,9 +58,9 @@ class OptionChainGenerator(keras.Model):
         gp = tf.reduce_mean((norm - 1.0) ** 2)
         return gp
 
-    def train_step(self, real_data):
-        if isinstance(real_data, tuple):
-            real_data = real_data[0]
+    def train_step(self, data):
+        if isinstance(data, tuple):
+            input_data, real_data = data
 
         # Get the batch size
         batch_size = tf.shape(real_data)[0]
@@ -80,13 +79,9 @@ class OptionChainGenerator(keras.Model):
         # one step of the generator. Here we will train it for 3 extra steps
         # as compared to 5 to reduce the training time.
         for _ in range(self.d_steps):
-            # Get the latent vector
-            random_latent_vectors = tf.random.normal(
-                shape=(batch_size, self.latent_dim)
-            )
             with tf.GradientTape() as tape:
                 # Generate fake images from the latent vector
-                fake_data = self.generator(random_latent_vectors, training=True)
+                fake_data = self.generator(input_data, training=True)
                 # Get the logits for the fake images
                 fake_logits = self.discriminator(fake_data, training=True)
                 # Get the logits for the real images
@@ -110,10 +105,9 @@ class OptionChainGenerator(keras.Model):
 
         # Train the generator
         # Get the latent vector
-        random_latent_vectors = tf.random.normal(shape=(batch_size, self.latent_dim))
         with tf.GradientTape() as tape:
             # Generate fake images using the generator
-            generated_images = self.generator(random_latent_vectors, training=True)
+            generated_images = self.generator(input_data, training=True)
             # Get the discriminator logits for fake images
             gen_img_logits = self.discriminator(generated_images, training=True)
             # Calculate the generator loss
