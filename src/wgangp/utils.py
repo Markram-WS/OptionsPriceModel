@@ -1,6 +1,6 @@
 def debug(x):
     print("===== [DEBUG] =====")
-    if type(x) == list:
+    if isinstance(x, list):
         for i in x:
             print(i)
     else:

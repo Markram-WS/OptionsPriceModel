@@ -43,14 +43,15 @@ def discriminator(
 def generator(
     input_dim,
     dense_units,
-    dropout_rate=0.1,
+    dropout_rate=0.2,
     use_bias=False,
     use_dropout=True,
     use_bn=True,
     initializer=keras.initializers.GlorotUniform(),
+    batch_size=32,
     activation=keras.layers.LeakyReLU(0.2),
 ):
-    input_data = keras.layers.Input(shape=(input_dim,))
+    input_data = keras.layers.Input(shape=(input_dim,), batch_size=batch_size)
     x = keras.layers.Dense(4 * 4 * 256, use_bias=False)(input_data)
     x = keras.layers.BatchNormalization()(x)
     x = keras.layers.LeakyReLU(0.2)(x)
