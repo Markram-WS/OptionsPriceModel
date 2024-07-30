@@ -9,7 +9,7 @@ class OptionChainGenerator(keras.Model):
         self.discriminator = discriminator
         self.generator = generator
 
-        self.d_steps = kwargs.get("discriminator_extra_steps", (3,))
+        self.d_steps = kwargs.get("discriminator_extra_steps", 3)
         self.gp_weight = kwargs.get("gp_weight", (10.0,))
 
     def compile(self, d_optimizer, g_optimizer):

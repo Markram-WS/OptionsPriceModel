@@ -62,11 +62,9 @@ def generator(
         shape=input_dim, batch_size=batch_size, name="input_x_data"
     )
     x = keras.layers.Flatten()(input_data)
-    x = keras.layers.Dense(8 * 8 * 4, use_bias=use_bias)(x)
     x = keras.layers.BatchNormalization()(x)
     x = keras.layers.LeakyReLU(0.2)(x)
-    x = keras.layers.Reshape((8, 8, 4))(x)
-
+    x = keras.layers.Reshape((input_dim[-1], input_dim[-1], input_dim[-1]))(input_data)
     for unit in dense_units:
         x = keras.layers.UpSampling2D((2, 2))(x)
         x = keras.layers.Conv2D(
@@ -85,16 +83,12 @@ def generator(
         if use_dropout:
             x = keras.layers.Dropout(dropout_rate)(x)
 
-    x = keras.layers.Cropping2D((2, 2))(x)
     # Convolutional layer to adjust the number of output channels to 4
-    x = keras.layers.Conv2D(
-        output_dim[-1],
-        kernel_size=(1, 1),
-        strides=(1, 1),
-        padding="same",
-        use_bias=use_bias,
-        name="Conv2D-output",
+    x = keras.layers.Flatten()(x)
+    x = keras.layers.Dropout(dropout_rate)(x)
+    x = keras.layers.Dense(
+        output_dim[0] * output_dim[1],
     )(x)
-
+    x = keras.layers.Reshape(output_dim, name="Reshape-output")(x)
     g_model = keras.models.Model(input_data, x, name="generator")
     return g_model
