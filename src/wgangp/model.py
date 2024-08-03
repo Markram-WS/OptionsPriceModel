@@ -4,13 +4,19 @@ import tensorflow as tf
 
 # https://keras.io/examples/generative/wgan_gp/
 class OptionChainGenerator(keras.Model):
-    def __init__(self, discriminator, generator, **kwargs):
+    def __init__(
+        self,
+        discriminator,
+        generator,
+        discriminator_extra_steps=3,
+        gp_weight=(10.0,),
+        **kwargs
+    ):
         super().__init__(**kwargs)
         self.discriminator = discriminator
         self.generator = generator
-
-        self.d_steps = kwargs.get("discriminator_extra_steps", 3)
-        self.gp_weight = kwargs.get("gp_weight", (10.0,))
+        self.d_steps = discriminator_extra_steps
+        self.gp_weight = gp_weight
 
     def compile(self, d_optimizer, g_optimizer):
         super().compile()
@@ -26,13 +32,13 @@ class OptionChainGenerator(keras.Model):
     def metrics(self):
         return [self.generator_loss_tracker, self.discriminator_loss_tracker]
 
-    def _discriminator_loss(real_data, fake_data):
+    def _discriminator_loss(self, real_data, fake_data):
         real_loss = tf.reduce_mean(real_data)
         fake_loss = tf.reduce_mean(fake_data)
         return fake_loss - real_loss
 
     # Define the loss functions for the generator.
-    def _generator_loss(fake_data):
+    def _generator_loss(self, fake_data):
         return -tf.reduce_mean(fake_data)
 
     def gradient_penalty(self, batch_size, real_images, fake_images):
@@ -42,10 +48,9 @@ class OptionChainGenerator(keras.Model):
         and added to the discriminator loss.
         """
         # Get the interpolated image
-        alpha = tf.random.uniform([batch_size, 1, 1, 1], 0.0, 1.0)
+        alpha = tf.random.uniform([batch_size, 1, 1], 0.0, 1.0)
         diff = fake_images - real_images
         interpolated = real_images + alpha * diff
-
         with tf.GradientTape() as gp_tape:
             gp_tape.watch(interpolated)
             # 1. Get the discriminator output for this interpolated image.
@@ -54,7 +59,7 @@ class OptionChainGenerator(keras.Model):
         # 2. Calculate the gradients w.r.t to this interpolated image.
         grads = gp_tape.gradient(pred, [interpolated])[0]
         # 3. Calculate the norm of the gradients.
-        norm = tf.sqrt(tf.reduce_sum(tf.square(grads), axis=[1, 2, 3]))
+        norm = tf.sqrt(tf.reduce_sum(tf.square(grads), axis=[1, 2]))
         gp = tf.reduce_mean((norm - 1.0) ** 2)
         return gp
 
@@ -88,9 +93,7 @@ class OptionChainGenerator(keras.Model):
                 real_logits = self.discriminator(real_data, training=True)
 
                 # Calculate the discriminator loss using the fake and real image logits
-                d_cost = self._discriminator_loss(
-                    real_img=real_logits, fake_img=fake_logits
-                )
+                d_cost = self._discriminator_loss(real_logits, fake_logits)
                 # Calculate the gradient penalty
                 gp = self.gradient_penalty(batch_size, real_data, fake_data)
                 # Add the gradient penalty to the original discriminator loss

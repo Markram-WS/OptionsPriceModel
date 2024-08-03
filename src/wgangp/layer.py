@@ -66,8 +66,8 @@ def generator(
     x = keras.layers.LeakyReLU(0.2)(x)
     x = keras.layers.Reshape((input_dim[-1], input_dim[-1], input_dim[-1]))(input_data)
     for unit in dense_units:
-        x = keras.layers.UpSampling2D((2, 2))(x)
-        x = keras.layers.Conv2D(
+        # x = keras.layers.UpSampling2D((2, 2))(x)
+        x = keras.layers.Conv2DTranspose(
             unit,
             kernel_size=(3, 3),
             strides=(1, 1),
