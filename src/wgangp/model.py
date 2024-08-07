@@ -10,13 +10,19 @@ class OptionChainGenerator(keras.Model):
         generator,
         discriminator_extra_steps=3,
         gp_weight=(10.0,),
-        **kwargs
+        output_col=[],
+        scaler=[],
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.discriminator = discriminator
         self.generator = generator
         self.d_steps = discriminator_extra_steps
         self.gp_weight = gp_weight
+        # ---other---
+        self.output_col = output_col
+        # zero values
+        self.scaler = scaler
 
     def compile(self, d_optimizer, g_optimizer):
         super().compile()
@@ -24,6 +30,13 @@ class OptionChainGenerator(keras.Model):
         self.g_optimizer = g_optimizer
 
         self.generator_loss_tracker = tf.keras.metrics.Mean(name="generator_loss")
+        self.generator_loss_tracker_wgan = tf.keras.metrics.Mean(
+            name="generator_loss_wgan"
+        )
+        self.generator_loss_tracker_c1 = tf.keras.metrics.Mean(name="generator_loss_c1")
+        self.generator_loss_tracker_c2 = tf.keras.metrics.Mean(name="generator_loss_c2")
+        self.generator_loss_tracker_p1 = tf.keras.metrics.Mean(name="generator_loss_p1")
+        self.generator_loss_tracker_p2 = tf.keras.metrics.Mean(name="generator_loss_p2")
         self.discriminator_loss_tracker = tf.keras.metrics.Mean(
             name="discriminator_loss"
         )
@@ -32,14 +45,77 @@ class OptionChainGenerator(keras.Model):
     def metrics(self):
         return [self.generator_loss_tracker, self.discriminator_loss_tracker]
 
-    def _discriminator_loss(self, real_data, fake_data):
-        real_loss = tf.reduce_mean(real_data)
-        fake_loss = tf.reduce_mean(fake_data)
+    def _discriminator_loss(self, real_logits, fake_logits):
+        real_loss = tf.reduce_mean(real_logits)
+        fake_loss = tf.reduce_mean(fake_logits)
         return fake_loss - real_loss
 
+        """
+        zero data
+        UNDERLYING_LAST	STRIKE	STRIKE_DISTANCE	INTRINSIC_VALUE	DTE	TOTAL_VOLUME	C_VEGA	P_VEGA	C_BID	C_ASK	C_VOLUME	P_BID	P_ASK	P_VOLUME
+        1137.471494	1105.070607	78.562482	32.400888	160.424048	3096.693716	1.951961	-15.65377	81.27063	83.551341	86.733379	46.981467	48.860226	127.545349
+
+        """
+
     # Define the loss functions for the generator.
-    def _generator_loss(self, fake_data):
-        return -tf.reduce_mean(fake_data)
+    def _generator_loss(self, fake_data, generated_data):
+        wgan_loss = -tf.reduce_mean(fake_data)
+        # create data dict
+        # Convert the tensor to a dictionary
+        data_dict = {
+            self.output_col[i]: generated_data[:, :, i]
+            for i in range(len(self.output_col))
+        }
+        # additional condition loss  c_ask > c_bid
+        additional_con_loss_c_1 = tf.reduce_mean(
+            tf.maximum(data_dict["C_ASK"] - data_dict["C_BID"], 0.0)
+        )
+        # additional condition loss  call (s-x)
+        # C_BID[0] : 81.27063
+        # C_ASK[0] : 83.551341
+        additional_con_loss_c_2 = []
+        for c, v in [("C_BID", 81.27063), ("C_ASK", 83.551341)]:
+            # tf mark with zero
+            mask = tf.greater(data_dict[c], v)
+            filtered_tensor = tf.boolean_mask(data_dict[c], mask)
+            filtered_tensor_roll = tf.roll(filtered_tensor, shift=-1, axis=0)
+            difference = tf.maximum(
+                filtered_tensor_roll[:-1] - filtered_tensor[:-1], 0.0
+            )
+            additional_con_loss_c_2.append(difference)
+        # tf mark with zero
+        # [:-1] - [1:]
+        # ?????
+
+        # additional condition loss  p_ask > p_bid
+        additional_con_loss_p_1 = tf.reduce_mean(
+            tf.maximum(data_dict["P_ASK"] - data_dict["P_BID"], 0.0)
+        )
+        # P_BID[0] : 46.981467
+        # P_ASK[0] : 48.860226
+        # additional condition loss  put (x-s)
+        additional_con_loss_p_2 = []
+        for p, v in [("P_BID", 46.981467), ("P_ASK", 48.860226)]:
+            # tf mark with zero
+            mask = tf.greater(data_dict[p], v)
+            filtered_tensor = tf.boolean_mask(data_dict[p], mask)
+            filtered_tensor_roll = tf.roll(filtered_tensor, shift=-1, axis=0)
+            difference = tf.maximum(
+                filtered_tensor[:-1] - filtered_tensor_roll[:-1], 0.0
+            )
+            additional_con_loss_p_2.append(difference)
+
+        # additional condition zero var
+        # DTE[0] : 160.424051
+        # mask = tf.greater(mark with dit, v)
+
+        return (
+            wgan_loss,
+            additional_con_loss_c_1,
+            additional_con_loss_p_1,
+            tf.reduce_sum(additional_con_loss_p_2),
+            tf.reduce_sum(additional_con_loss_c_2),
+        )
 
     def gradient_penalty(self, batch_size, real_images, fake_images):
         """Calculates the gradient penalty.
@@ -69,6 +145,10 @@ class OptionChainGenerator(keras.Model):
 
         # Get the batch size
         batch_size = tf.shape(real_data)[0]
+
+        # zeroArr = np.zeros((1, 16, 14))
+        # zeroArr=Scaler.transform(zeroArr.reshape(-1,(1, 16, 14)[-1]))
+        # zeroArr = zeroArr.reshape(1,16,14)[:, :, select_y]
 
         # For each batch, we are going to perform the
         # following steps as laid out in the original paper:
@@ -110,11 +190,24 @@ class OptionChainGenerator(keras.Model):
         # Get the latent vector
         with tf.GradientTape() as tape:
             # Generate fake images using the generator
-            generated_images = self.generator(input_data, training=True)
+            generated_data = self.generator(input_data, training=True)
             # Get the discriminator logits for fake images
-            gen_img_logits = self.discriminator(generated_images, training=True)
+            gen_img_logits = self.discriminator(generated_data, training=True)
             # Calculate the generator loss
-            g_loss = self._generator_loss(gen_img_logits)
+            (
+                wgan_loss,
+                additional_con_loss_c_1,
+                additional_con_loss_p_1,
+                additional_con_loss_p_2,
+                additional_con_loss_c_2,
+            ) = self._generator_loss(gen_img_logits, generated_data, real_data)
+            g_loss = (
+                wgan_loss
+                + additional_con_loss_c_1
+                + additional_con_loss_p_1
+                + additional_con_loss_p_2
+                + additional_con_loss_c_2
+            )
 
         # Get the gradients w.r.t the generator loss
         gen_gradient = tape.gradient(g_loss, self.generator.trainable_variables)
@@ -124,10 +217,20 @@ class OptionChainGenerator(keras.Model):
         )
 
         self.generator_loss_tracker.update_state(g_loss)
+        self.generator_loss_tracker_wgan.update_state(wgan_loss)
+        self.generator_loss_tracker_c1.update_state(additional_con_loss_c_1)
+        self.generator_loss_tracker_c2.update_state(additional_con_loss_p_1)
+        self.generator_loss_tracker_p1.update_state(additional_con_loss_p_2)
+        self.generator_loss_tracker_p2.update_state(additional_con_loss_c_2)
         self.discriminator_loss_tracker.update_state(d_loss)
 
         return {
             "generator_loss": self.generator_loss_tracker.result(),
+            "generator_loss_wgan": self.generator_loss_tracker_wgan.result(),
+            "generator_loss_c1": self.generator_loss_tracker_c1.result(),
+            "generator_loss_c2": self.generator_loss_tracker_c2.result(),
+            "generator_loss_p1": self.generator_loss_tracker_p1.result(),
+            "generator_loss_p2": self.generator_loss_tracker_p2.result(),
             "discriminator_loss": self.discriminator_loss_tracker.result(),
         }
 
@@ -135,12 +238,14 @@ class OptionChainGenerator(keras.Model):
         x_data, y_data = data
         gen_data = self.generator(x_data)
         # Get critic's predictions
-        real_output = self.discriminator(y_data, training=False)
-        fake_output = self.discriminator(gen_data, training=False)
+        real_img_logits = self.discriminator(y_data, training=False)
+        fake_img_logits = self.discriminator(gen_data, training=False)
 
         # Calculate loss
-        discriminator_loss = tf.reduce_mean(fake_output) - tf.reduce_mean(real_output)
-        generator_loss = -tf.reduce_mean(fake_output)
+        discriminator_loss = tf.reduce_mean(real_img_logits) - tf.reduce_mean(
+            fake_img_logits
+        )
+        generator_loss = -tf.reduce_mean(fake_img_logits)
 
         self.generator_loss_tracker.update_state(generator_loss)
         self.discriminator_loss_tracker.update_state(discriminator_loss)
