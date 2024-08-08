@@ -51,6 +51,7 @@ class OptionChainGenerator(keras.Model):
         return fake_loss - real_loss
 
         """
+        #! fix zero value data
         zero data
         UNDERLYING_LAST	STRIKE	STRIKE_DISTANCE	INTRINSIC_VALUE	DTE	TOTAL_VOLUME	C_VEGA	P_VEGA	C_BID	C_ASK	C_VOLUME	P_BID	P_ASK	P_VOLUME
         1137.471494	1105.070607	78.562482	32.400888	160.424048	3096.693716	1.951961	-15.65377	81.27063	83.551341	86.733379	46.981467	48.860226	127.545349
@@ -59,22 +60,24 @@ class OptionChainGenerator(keras.Model):
 
     # Define the loss functions for the generator.
     def _generator_loss(self, fake_data, generated_data):
-        wgan_loss = -tf.reduce_mean(fake_data)
+        # wgan_loss = -tf.reduce_mean(fake_data)
+        wgan_loss = 0.0
         # create data dict
         # Convert the tensor to a dictionary
         data_dict = {
             self.output_col[i]: generated_data[:, :, i]
             for i in range(len(self.output_col))
         }
-        # additional condition loss  c_ask > c_bid
+
+        # [c1] additional condition loss  c_ask > c_bid
         additional_con_loss_c_1 = tf.reduce_mean(
             tf.maximum(data_dict["C_ASK"] - data_dict["C_BID"], 0.0)
         )
-        # additional condition loss  call (s-x)
-        # C_BID[0] : 81.27063
-        # C_ASK[0] : 83.551341
+        # [c2] additional condition loss  call (s-x)
+        # C_BID[0] : -0.502343
+        # C_ASK[0] : -0.502132
         additional_con_loss_c_2 = []
-        for c, v in [("C_BID", 81.27063), ("C_ASK", 83.551341)]:
+        for c, v in [("C_BID", -0.502343), ("C_ASK", -0.502132)]:
             # tf mark with zero
             mask = tf.greater(data_dict[c], v)
             filtered_tensor = tf.boolean_mask(data_dict[c], mask)
@@ -82,20 +85,19 @@ class OptionChainGenerator(keras.Model):
             difference = tf.maximum(
                 filtered_tensor_roll[:-1] - filtered_tensor[:-1], 0.0
             )
-            additional_con_loss_c_2.append(difference)
-        # tf mark with zero
-        # [:-1] - [1:]
-        # ?????
+            additional_con_loss_c_2.append(tf.reduce_sum(difference))
+        additional_con_loss_c_2 = tf.reduce_mean(additional_con_loss_c_2)
 
-        # additional condition loss  p_ask > p_bid
+        # [p1] additional condition loss  p_ask > p_bid
         additional_con_loss_p_1 = tf.reduce_mean(
             tf.maximum(data_dict["P_ASK"] - data_dict["P_BID"], 0.0)
         )
-        # P_BID[0] : 46.981467
-        # P_ASK[0] : 48.860226
-        # additional condition loss  put (x-s)
+
+        # [p2] additional condition loss  put (x-s)
+        # P_BID[0] : -0.44685
+        # P_ASK[0] : -0.218069
         additional_con_loss_p_2 = []
-        for p, v in [("P_BID", 46.981467), ("P_ASK", 48.860226)]:
+        for p, v in [("P_BID", -0.44685), ("P_ASK", -0.218069)]:
             # tf mark with zero
             mask = tf.greater(data_dict[p], v)
             filtered_tensor = tf.boolean_mask(data_dict[p], mask)
@@ -103,8 +105,8 @@ class OptionChainGenerator(keras.Model):
             difference = tf.maximum(
                 filtered_tensor[:-1] - filtered_tensor_roll[:-1], 0.0
             )
-            additional_con_loss_p_2.append(difference)
-
+            additional_con_loss_p_2.append(tf.reduce_sum(difference))
+        additional_con_loss_p_2 = tf.reduce_mean(additional_con_loss_p_2)
         # additional condition zero var
         # DTE[0] : 160.424051
         # mask = tf.greater(mark with dit, v)
@@ -113,8 +115,8 @@ class OptionChainGenerator(keras.Model):
             wgan_loss,
             additional_con_loss_c_1,
             additional_con_loss_p_1,
-            tf.reduce_sum(additional_con_loss_p_2),
-            tf.reduce_sum(additional_con_loss_c_2),
+            additional_con_loss_p_2,
+            additional_con_loss_c_2,
         )
 
     def gradient_penalty(self, batch_size, real_images, fake_images):
@@ -200,7 +202,7 @@ class OptionChainGenerator(keras.Model):
                 additional_con_loss_p_1,
                 additional_con_loss_p_2,
                 additional_con_loss_c_2,
-            ) = self._generator_loss(gen_img_logits, generated_data, real_data)
+            ) = self._generator_loss(gen_img_logits, generated_data)
             g_loss = (
                 wgan_loss
                 + additional_con_loss_c_1
