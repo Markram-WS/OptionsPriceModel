@@ -10,6 +10,7 @@ class OptionChainGenerator(keras.Model):
         generator,
         discriminator_extra_steps=3,
         gp_weight=(10.0,),
+        gp_cap=None,
         output_col=[],
         scaler=[],
         **kwargs,
@@ -19,6 +20,7 @@ class OptionChainGenerator(keras.Model):
         self.generator = generator
         self.d_steps = discriminator_extra_steps
         self.gp_weight = gp_weight
+        self.gp_cap = gp_cap
         # ---other---
         self.output_col = output_col
         # zero values
@@ -40,10 +42,17 @@ class OptionChainGenerator(keras.Model):
         self.discriminator_loss_tracker = tf.keras.metrics.Mean(
             name="discriminator_loss"
         )
+        self.d_cost_tracker = tf.keras.metrics.Mean(name="d_cost")
+        self.gradient_penalty_tracker = tf.keras.metrics.Mean(name="gradient_penalty")
 
     @property
     def metrics(self):
-        return [self.generator_loss_tracker, self.discriminator_loss_tracker]
+        return [
+            self.generator_loss_tracker,
+            self.discriminator_loss_tracker,
+            self.gradient_penalty_tracker,
+            self.d_cost_tracker,
+        ]
 
     def _discriminator_loss(self, real_logits, fake_logits):
         real_loss = tf.reduce_mean(real_logits)
@@ -60,8 +69,8 @@ class OptionChainGenerator(keras.Model):
 
     # Define the loss functions for the generator.
     def _generator_loss(self, fake_data, generated_data):
-        # wgan_loss = -tf.reduce_mean(fake_data)
-        wgan_loss = 0.0
+        wgan_loss = -tf.reduce_mean(fake_data)
+        # wgan_loss = 0.0
         # create data dict
         # Convert the tensor to a dictionary
         data_dict = {
@@ -71,13 +80,13 @@ class OptionChainGenerator(keras.Model):
 
         # [c1] additional condition loss  c_ask > c_bid
         additional_con_loss_c_1 = tf.reduce_mean(
-            tf.maximum(data_dict["C_ASK"] - data_dict["C_BID"], 0.0)
+            data_dict["C_ASK"] - data_dict["C_BID"]
         )
         # [c2] additional condition loss  call (s-x)
-        # C_BID[0] : -0.502343
-        # C_ASK[0] : -0.502132
+        # C_BID[0] : -4.999975e-14
+        # C_ASK[0] : -4.999975e-14
         additional_con_loss_c_2 = []
-        for c, v in [("C_BID", -0.502343), ("C_ASK", -0.502132)]:
+        for c, v in [("C_BID", -4.999975e-14), ("C_ASK", -4.999975e-14)]:
             # tf mark with zero
             mask = tf.greater(data_dict[c], v)
             filtered_tensor = tf.boolean_mask(data_dict[c], mask)
@@ -90,14 +99,14 @@ class OptionChainGenerator(keras.Model):
 
         # [p1] additional condition loss  p_ask > p_bid
         additional_con_loss_p_1 = tf.reduce_mean(
-            tf.maximum(data_dict["P_ASK"] - data_dict["P_BID"], 0.0)
+            data_dict["P_ASK"] - data_dict["P_BID"]
         )
 
         # [p2] additional condition loss  put (x-s)
-        # P_BID[0] : -0.44685
-        # P_ASK[0] : -0.218069
+        # P_BID[0] : -4.999975e-14
+        # P_ASK[0] : -4.999975e-14
         additional_con_loss_p_2 = []
-        for p, v in [("P_BID", -0.44685), ("P_ASK", -0.218069)]:
+        for p, v in [("P_BID", -4.999975e-14), ("P_ASK", -4.999975e-14)]:
             # tf mark with zero
             mask = tf.greater(data_dict[p], v)
             filtered_tensor = tf.boolean_mask(data_dict[p], mask)
@@ -113,10 +122,10 @@ class OptionChainGenerator(keras.Model):
 
         return (
             wgan_loss,
-            additional_con_loss_c_1,
-            additional_con_loss_p_1,
-            additional_con_loss_p_2,
-            additional_con_loss_c_2,
+            additional_con_loss_c_1 * 0.01,
+            0,
+            additional_con_loss_p_1 * 0.01,
+            0,
         )
 
     def gradient_penalty(self, batch_size, real_images, fake_images):
@@ -178,6 +187,8 @@ class OptionChainGenerator(keras.Model):
                 d_cost = self._discriminator_loss(real_logits, fake_logits)
                 # Calculate the gradient penalty
                 gp = self.gradient_penalty(batch_size, real_data, fake_data)
+                if self.gp_cap:
+                    gp = tf.minimum(gp, self.gp_cap)
                 # Add the gradient penalty to the original discriminator loss
                 d_loss = d_cost + gp * self.gp_weight
 
@@ -199,16 +210,16 @@ class OptionChainGenerator(keras.Model):
             (
                 wgan_loss,
                 additional_con_loss_c_1,
+                additional_con_loss_c_2,
                 additional_con_loss_p_1,
                 additional_con_loss_p_2,
-                additional_con_loss_c_2,
             ) = self._generator_loss(gen_img_logits, generated_data)
             g_loss = (
                 wgan_loss
                 + additional_con_loss_c_1
+                + additional_con_loss_c_2
                 + additional_con_loss_p_1
                 + additional_con_loss_p_2
-                + additional_con_loss_c_2
             )
 
         # Get the gradients w.r.t the generator loss
@@ -221,10 +232,12 @@ class OptionChainGenerator(keras.Model):
         self.generator_loss_tracker.update_state(g_loss)
         self.generator_loss_tracker_wgan.update_state(wgan_loss)
         self.generator_loss_tracker_c1.update_state(additional_con_loss_c_1)
-        self.generator_loss_tracker_c2.update_state(additional_con_loss_p_1)
-        self.generator_loss_tracker_p1.update_state(additional_con_loss_p_2)
-        self.generator_loss_tracker_p2.update_state(additional_con_loss_c_2)
+        self.generator_loss_tracker_c2.update_state(additional_con_loss_c_2)
+        self.generator_loss_tracker_p1.update_state(additional_con_loss_p_1)
+        self.generator_loss_tracker_p2.update_state(additional_con_loss_p_2)
         self.discriminator_loss_tracker.update_state(d_loss)
+        self.gradient_penalty_tracker.update_state(gp)
+        self.d_cost_tracker.update_state(d_cost)
 
         return {
             "generator_loss": self.generator_loss_tracker.result(),
@@ -234,6 +247,8 @@ class OptionChainGenerator(keras.Model):
             "generator_loss_p1": self.generator_loss_tracker_p1.result(),
             "generator_loss_p2": self.generator_loss_tracker_p2.result(),
             "discriminator_loss": self.discriminator_loss_tracker.result(),
+            "gradient_penalty": self.gradient_penalty_tracker.result(),
+            "d_cost": self.d_cost_tracker.result(),
         }
 
     def test_step(self, data):
